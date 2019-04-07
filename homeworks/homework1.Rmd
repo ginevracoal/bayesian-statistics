@@ -1,0 +1,34 @@
+---
+title: "Homework 1"
+author: "Ginevra Carbone"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**TH-1:** Linear regression slides, slide 20: fit the same model with the function bayesglm() of the arm package and comment. Then, use an informative prior and comment the results.
+
+```{r}
+
+```
+
+**BDA-1:** Ex 2.7 (p. 58) - Noninformative prior densities.
+
+```{r}
+
+```
+
+**BDA-2:** Ex 2.8 (p. 58) - Normal distribution with unknown mean.
+
+```{r}
+
+```
+
+**LAB-1:** Repeat the lab session using the dataset ShipAccidents in the AER package.
+
+```{r}
+
+```
+
