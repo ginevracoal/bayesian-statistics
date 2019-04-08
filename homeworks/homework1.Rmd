@@ -8,10 +8,13 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-**TH-1:** Linear regression slides, slide 20: fit the same model with the function bayesglm() of the arm package and comment. Then, use an informative prior and comment the results.
+**TH-1:** Linear regression slides, slide 20: fit the same model with the function `bayesglm()` of the `arm` package and comment. Then, use an informative prior and comment the results.
 
-```{r}
+```{r message=FALSE}
+library(arm)
 
+
+bayesglm(dist ~ speed, data=cars)
 ```
 
 **BDA-1:** Ex 2.7 (p. 58) - Noninformative prior densities.
