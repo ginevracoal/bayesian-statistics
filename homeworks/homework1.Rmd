@@ -2,7 +2,10 @@
 title: "Homework 1"
 author: "Ginevra Carbone"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
@@ -13,11 +16,13 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r message=FALSE}
 library(arm)
 
-
 bayesglm(dist ~ speed, data=cars)
 ```
 
 **BDA-1:** Ex 2.7 (p. 58) - Noninformative prior densities.
+
+(a) For the binomial likelihood, $y ∼ Bin(n, θ)$, show that $p(θ) ∝ θ ^{−1} (1 − θ)^{−1}$ is the uniform prior distribution for the natural parameter of the exponential family.
+(b) Show that if $y = 0$ or $n$, the resulting posterior distribution is improper.
 
 ```{r}
 
