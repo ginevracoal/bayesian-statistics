@@ -381,9 +381,7 @@ $(document).ready(function () {
 
 
 <p><strong>TH-1:</strong> Linear regression slides, slide 20: fit the same model with the function <code>bayesglm()</code> of the <code>arm</code> package and comment. Then, use an informative prior and comment the results.</p>
-<pre class="r"><code>library(arm)
-
-bayesglm(dist ~ speed, data=cars)</code></pre>
+<pre class="r"><code>bayesglm(dist ~ speed, data=cars)</code></pre>
 <pre><code>## 
 ## Call:  bayesglm(formula = dist ~ speed, data = cars)
 ## 
@@ -395,7 +393,76 @@ bayesglm(dist ~ speed, data=cars)</code></pre>
 ## Null Deviance:       32540 
 ## Residual Deviance: 11350     AIC: 419.2</code></pre>
 <p><strong>BDA-1:</strong> Ex 2.7 (p. 58) - Noninformative prior densities.</p>
+<ol style="list-style-type: lower-alpha">
+<li>For the binomial likelihood, <span class="math inline">\(y ∼ Bin(n, θ)\)</span>, show that <span class="math inline">\(p(θ) ∝ θ ^{−1} (1 − θ)^{−1}\)</span> is the uniform prior distribution for the natural parameter of the exponential family.</li>
+<li>Show that if <span class="math inline">\(y = 0\)</span> or <span class="math inline">\(n\)</span>, the resulting posterior distribution is improper.</li>
+</ol>
 <p><strong>BDA-2:</strong> Ex 2.8 (p. 58) - Normal distribution with unknown mean.</p>
+<p>A random sample of <span class="math inline">\(n\)</span> students is drawn from a large population, and their weights are measured. The average weight of the <span class="math inline">\(n\)</span> sampled students is <span class="math inline">\(y = 150\)</span> pounds. Assume the weights in the population are normally distributed with unknown mean <span class="math inline">\(θ\)</span> and known standard deviation 20 pounds. Suppose your prior distribution for <span class="math inline">\(θ\)</span> is normal with mean 180 and standard deviation 40.</p>
+<ol style="list-style-type: lower-alpha">
+<li>Give your posterior distribution for <span class="math inline">\(θ\)</span>. (Your answer will be a function of <span class="math inline">\(n\)</span>.)</li>
+</ol>
+<p>Prior <span class="math inline">\(\theta \sim \mathcal{N}(\theta_0, \sigma_0^2) = \mathcal{N}(180,40^2)\)</span> gives <span class="math inline">\(\pi(\theta) \propto exp\Big(-\frac{(\theta-180)^2}{2 \cdot 40^2}\Big)\)</span>.</p>
+<p>Likelihood <span class="math inline">\(y | \theta \sim \mathcal{N}(\theta, \sigma^2) = \mathcal{N}(\theta, 20^2)\)</span> gives</p>
+<p><span class="math display">\[\begin{align}
+
+p(y|\theta) 
+  &amp; = \Pi_{i=1}^n f_Y(y_i; \theta, 20^2) = \Pi_{i=1}^n \frac{1}{\sqrt{2 \pi 20^2}} exp\Big(-\frac{(y_i - \theta)^2}{2\cdot 20^2}\Big) \\
+  &amp; \propto exp \Big(\sum(y_i - \theta)^2 \Big)  \propto exp \Big( -2\theta \cdot 150 n + n \theta^2 \Big)
+  
+\end{align}\]</span></p>
+<p>So we get the posterior</p>
+<p><span class="math display">\[
+\pi(\theta | y) \propto p(y | \theta) \pi(\theta) \propto exp\Bigg(-\frac{(\theta-180)^2}{2\cdot 40^2}-2 \theta \cdot 150n+n \theta^2\Bigg)
+\]</span></p>
+<p>which, after proper calculations, becomes the following normal distribution</p>
+<p><span class="math display">\[\begin{align}
+\theta | y \sim
+\mathcal{N}(\theta_0',\sigma_0')
+&amp;= \mathcal{N}
+\Bigg( 
+\frac{180 \cdot 20^2+150 \cdot n \cdot 20^2}{20^2 + n\cdot 40^2}, 
+\frac{20^2 \cdot 40^2}{20^2+n40^2}
+\Bigg)\\
+
+&amp;= \mathcal{N}\Bigg(\frac{72000+240000 n}{400+1600n}, \frac{640000}{400+1600n}\Bigg) 
+\end{align}\]</span></p>
+<ol start="2" style="list-style-type: lower-alpha">
+<li>A new student is sampled at random from the same population and has a weight of <span class="math inline">\(\tilde{y}\)</span> pounds. Give a posterior predictive distribution for <span class="math inline">\(\tilde{y}\)</span>. (Your answer will still be a function of <span class="math inline">\(n\)</span>.)</li>
+</ol>
+<p>The posterior predictive distribution on the observed data <span class="math inline">\(y\)</span> is</p>
+<p><span class="math display">\[
+p(\tilde{y} | y) = \int_{\Theta} p(\tilde{y} | \theta) \pi(\theta|y)d\theta 
+\]</span></p>
+<p>so in our case</p>
+<p><span class="math display">\[
+\tilde{y} | y
+  \sim  \mathcal{N} (\tilde{y} | \theta_0',\sigma_0'+\sigma^2)
+  = \mathcal{N}\Bigg(\frac{72000+240000 n}{400+1600n}, \frac{640000}{400+1600n}+400\Bigg)
+\]</span></p>
+<ol start="3" style="list-style-type: lower-alpha">
+<li>For <span class="math inline">\(n = 10\)</span>, give a 95% posterior interval for <span class="math inline">\(θ\)</span> and a 95% posterior predictive interval for <span class="math inline">\(ỹ\)</span>.</li>
+</ol>
+<p>The posterior interval for <span class="math inline">\(\theta\)</span> is the interval whose extremes are the <span class="math inline">\(\alpha/2=0.025\)</span> and <span class="math inline">\(1-\alpha/2=0.975\)</span> quantiles of <span class="math inline">\(\pi(\theta | y)\)</span>. The same holds for <span class="math inline">\(y\)</span> and the quantiles of <span class="math inline">\(p(\tilde{y},y)\)</span>.</p>
+<pre class="r"><code>theta_l = qnorm(.025, 150.731707317, sqrt(39.024390244))
+theta_r = qnorm(.975, 150.731707317, sqrt(39.024390244))
+cat(&quot;posterior interval for theta: [&quot;, theta_l, &quot;,&quot; , theta_r, &quot;]&quot;)</code></pre>
+<pre><code>## posterior interval for theta: [ 138.4879 , 162.9755 ]</code></pre>
+<pre class="r"><code>theta_l = qnorm(.025, 150.731707317, sqrt(439.024390244))
+theta_r = qnorm(.975, 150.731707317, sqrt(439.024390244))
+cat(&quot;posterior predictive interval for y_tilde: [&quot;, theta_l, &quot;,&quot; , theta_r, &quot;]&quot;)</code></pre>
+<pre><code>## posterior predictive interval for y_tilde: [ 109.6648 , 191.7987 ]</code></pre>
+<ol start="4" style="list-style-type: lower-alpha">
+<li>Do the same for n = 100.</li>
+</ol>
+<pre class="r"><code>theta_l = qnorm(.025, 150.074812968, sqrt(3.990024938))
+theta_r = qnorm(.975, 150.074812968, sqrt(3.990024938))
+cat(&quot;posterior interval for theta: [&quot;, theta_l, &quot;,&quot; , theta_r, &quot;]&quot;)</code></pre>
+<pre><code>## posterior interval for theta: [ 146.1598 , 153.9899 ]</code></pre>
+<pre class="r"><code>theta_l = qnorm(.025, 150.074812968, sqrt(403.990024938))
+theta_r = qnorm(.975, 150.074812968, sqrt(403.990024938))
+cat(&quot;posterior predictive interval for y_tilde: [&quot;, theta_l, &quot;,&quot; , theta_r, &quot;]&quot;)</code></pre>
+<pre><code>## posterior predictive interval for y_tilde: [ 110.6805 , 189.4691 ]</code></pre>
 <p><strong>LAB-1:</strong> Repeat the lab session using the dataset ShipAccidents in the AER package.</p>
 
 
