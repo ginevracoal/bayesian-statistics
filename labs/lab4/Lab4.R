@@ -76,17 +76,28 @@ fit_P_real_data <- sampling(comp_model_P, data = stan_dat_simple)
 ## print the parameters 
 print(fit_P_real_data, pars = c('alpha','beta'))
 
+# n_eff è il numero di simulazioni che possono essere reputate indipendenti
+# l'una dall'altra (è come un'alternativa dell'acf)
+
+# Rhat indica se il parametro è arrivato a convergenza (in tal caso è 1)
 
 ## ----hist_simple_P-------------------------------------------------------
 mcmc_hist(as.matrix(fit_P_real_data, pars = c('alpha','beta')))
 mcmc_scatter(as.matrix(fit_P_real_data, pars = c('alpha','beta')), alpha = 0.2)
 
+# Le variabili sono correlate perché c'è un legame tra il numero di 
+# trappole ed i constraints.
 
 ## ------------------------------------------------------------------------
 ## posterior predictive checking
 y_rep <- as.matrix(fit_P_real_data, pars = "y_rep")
 ppc_dens_overlay(y = stan_dat_simple$complaints, y_rep[1:200,])
 
+# y è la densità dei dati osservati
+# y_rep sono le densità simulate dalle catene
+
+# Da questo plot vediamo che il nostro modello non riesce a catturare 
+# tutta la varianza.
 
 ## ------------------------------------------------------------------------
 ## standardised residuals of the observed vs predicted number of complaints
@@ -94,12 +105,14 @@ mean_y_rep <- colMeans(y_rep)
 std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep)
 qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
 
+# Abbiamo dei residui per lo più positivi, quindi il modello sottostima.
 
 ## ------------------------------------------------------------------------
 ggplot(pest_data, aes(x = log(total_sq_foot), y = log1p(complaints))) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
 
+# Inseriamo un predittore ed un offset 
 
 ## ------------------------------------------------------------------------
 ## add the two variables to the list of the data
@@ -117,6 +130,8 @@ comp_model_P_mult <- stan_model('multiple_poisson_regression.stan')
 fit_model_P_mult_real <- sampling(comp_model_P_mult, data = stan_dat_simple)
 y_rep <- as.matrix(fit_model_P_mult_real, pars = "y_rep")
 ppc_dens_overlay(stan_dat_simple$complaints, y_rep[1:200,])
+
+# il plot non migliora molto... è un po' più centrato verso la fine
 
 ## ------------------------------------------------------------------------
 ppc_intervals(
@@ -149,6 +164,9 @@ mean_y_rep <- colMeans(y_rep)
 std_resid <- (stan_dat_simple$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
 qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
 
+# Ci sono ancora dei residui molto grandi. Risolveremo questo problema 
+# usando un modello gerarchico e osservando il fatto che i complaints 
+# dipendono da quanto è vecchia la struttura.
 
 ## ------------------------------------------------------------------------
 ## prediction by number of traps
