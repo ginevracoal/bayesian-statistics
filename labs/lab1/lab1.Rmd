@@ -1,0 +1,117 @@
+---
+title: "Poisson model"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(123)
+
+# simulate three random samples from Poisson distribution
+theta <- 0.5
+y20 <- rpois(20, theta)
+y100 <- rpois(100, theta)
+y1000 <- rpois(1000, theta)
+
+a <- c(1, 1, 1, 2)
+b <- c(.5, 2, 10, 2)
+```
+
+**1.** Plot the four prior distributions on the same graph, then add the Jeffreys’ prior.
+
+```{r}
+gamma_prior <- function(x, k){return(dgamma(x, a[k], b[k]))}
+jeffreys_prior <- function(x, theta){return(1/sqrt(x))}
+
+plot(c(), c(), xlim=c(0,3), ylim=c(0,3), xlab="", ylab="", main="Prior distributions")
+for(k in 1:4) curve(gamma_prior(x,k), add=T, col=k)
+curve(jeffreys_prior(x, theta), add=T, col=5)
+legend(2, 2, 
+       legend=c("Gamma(1,0.5)", "Gamma(1,2)", 
+                "Gamma(1,10)", "Gamma(2,2)",
+                "Jeffreys"),
+       col=c(1:5), lty=1, cex=0.8)
+```
+
+**2.** For each simulated dataset, plot on the same graph the five posterior distributions.
+
+```{r}
+gamma_posterior <- function(x,y,k){
+    return(dgamma(x,sum(y)+a[k],length(y)+b[k]))
+}
+jeffreys_posterior <- function(x,y,theta){
+    return(dgamma(x,sum(y)+theta,length(y)))
+}
+
+plot_posteriors <- function(y){
+    plot(c(), c(), xlim=c(0,2), ylim=c(0,8), main=paste("n=",length(y)), xlab="", ylab="")
+    for(k in 1:5) curve(gamma_posterior(x,y,k), add=T, col=k)
+    curve(jeffreys_posterior(x,y,theta), add=T, col=5)
+    legend(1, 2.5, 
+           legend=c("Gamma(1,0.5)", "Gamma(1,2)", "Gamma(1,10)", "Gamma(2,2)","Jeffreys"),
+           col=c(1:5), lty=1, cex=0.8)
+}
+
+plot_posteriors(y20)
+plot_posteriors(y100)
+plot_posteriors(y1000)
+```
+
+**3.** Find the posterior expectations and the maxima a posteriori (MAP) of $\theta$.
+
+```{r}
+posterior_expectations <- function(y){
+    for(k in 1:4) print((sum(y)+a[k])/(length(y)+b[k]))
+    print((sum(y)+theta)/length(y))
+}
+
+posterior_expectations(y20)
+posterior_expectations(y100)
+posterior_expectations(y1000)
+
+MAP <- function(y){
+    for(k in 1:4) print((sum(y)+a[k]-1)/(length(y)+b[k]))
+    print((sum(y)+theta)/length(y))
+}
+
+MAP(y20)
+MAP(y100)
+MAP(y1000)
+```
+
+**4.** Comment on plots and estimations.
+
+**5.** Construct the 95% credible intervals, equi-tails and highest posterior density (HPD), for the three datasets using the Jeffreys’ prior.
+
+```{r}
+# fix confidence level
+alpha <- 0.05
+
+credible_intervals <- function(alpha,y) {
+    return(qgamma(c(alpha*0.5,1-alpha*0.5),sum(y)+theta,length(y)))
+}
+
+credible_intervals(alpha,y20)
+credible_intervals(alpha,y100)
+credible_intervals(alpha,y1000)
+
+hpd <- function(y,p){
+    set.seed(123)
+    y <- rgamma(1000,sum(y)+theta,length(y))
+    dy<-density(y)
+    md<-dy$x[dy$y==max(dy$y)]
+    py<-dy$y/sum(dy$y)
+    pys<-sort(py, decreasing=T)
+    ths<-min(pys[cumsum(pys)< p])
+    list(hpdr=range(dy$x[py>=ths]),mode=md)
+}
+
+hpd(y20,0.95)
+hpd(y100,0.95)
+hpd(y1000,0.95)
+```
