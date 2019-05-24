@@ -1,0 +1,21 @@
+---
+title: "Homework 3"
+author: "Ginevra Carbone"
+output:
+  html_document: default
+  pdf_document: default
+editor_options:
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exercise 1
+
+**TH-1:** Probit model - Start from the logistic model on slide 20 `1992polls.stan` and write the probit specification of the model using the  `target+=` sintax in the model block and the `bernoulli_lpmf` function (for any doubt, see the Stan manual documentation in the Stan website). Simulate 1000 draws using the `1992polls` data and compare the results with the ones obtained using the `rstanarm::stan_glm` function.
+
+## Exercise 2
+
+**LAB-1:** Using the most appropriate graphical tools of the `bayesplot` package, analyze the models fitted during the 4th and 5th lab sessions on the cockroaches dataset and comment.
