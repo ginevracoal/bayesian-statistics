@@ -17,8 +17,8 @@ data {
   vector[N] log_sq_foot;  
   
   // building-level data
-  int<lower=1> K; # numero di predittori
-  int<lower=1> J; # numero di palazzi
+  int<lower=1> K; // numero di predittori
+  int<lower=1> J; // numero di palazzi
   
   // Questa è in sostanza una lista di chiavi che puntano al 
   // building di riferimento.
@@ -30,7 +30,7 @@ parameters {
   real beta;               
   
   vector[J] mu_raw;
-  real<lower=0> sigma_mu; # varianza delle medie
+  real<lower=0> sigma_mu; // varianza delle medie
   real alpha;             
   vector[K] zeta;    
 }
@@ -47,7 +47,7 @@ model {
   
   alpha ~ normal(log(4),1);
   zeta ~ normal(0,1);
-  beta ~ normal(-0.25,1);
+  beta ~ normal(.5,1);
   inv_phi ~ normal(0,1);
   
   // new parameter for mu exploration

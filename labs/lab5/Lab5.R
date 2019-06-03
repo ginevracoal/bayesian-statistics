@@ -27,7 +27,7 @@ theme_set(bayesplot::theme_default())
 rstan_options(auto_write=TRUE)
 
 ## ----eval=TRUE,echo=TRUE-------------------------------------------------
-pest_data <- readRDS('../lab4/pest_data.RDS')
+pest_data <- readRDS('lab4/pest_data.RDS')
 str(pest_data)
 summary(pest_data)
 
@@ -49,7 +49,7 @@ str(stan_dat_simple)
 
 
 ## ---- cache=TRUE, results="hide", message=FALSE--------------------------
-comp_model_NB <- stan_model('../lab4/multiple_NB_regression.stan')
+comp_model_NB <- stan_model('lab4/multiple_NB_regression.stan')
 
 
 ## ----runNB---------------------------------------------------------------
@@ -123,7 +123,7 @@ str(stan_dat_hier)
 
 
 ## ----comp-NB-hier, cache=TRUE, results="hide", message=FALSE-------------
-comp_model_NB_hier <- stan_model('hier_NB_regression.stan')
+comp_model_NB_hier <- stan_model('lab5/hier_NB_regression.stan')
 
 ## ----run-NB-hier---------------------------------------------------------
 fitted_model_NB_hier <- sampling(comp_model_NB_hier, data = stan_dat_hier,
@@ -176,7 +176,7 @@ parcoord_with_divs
 
 
 ## ----comp-NB-hier-ncp, cache=TRUE----------------------------------------
-comp_model_NB_hier_ncp <- stan_model('hier_NB_regression_ncp.stan')
+comp_model_NB_hier_ncp <- stan_model('lab5/hier_NB_regression_ncp.stan')
 
 
 ## ----run-NB-hier-ncp-----------------------------------------------------
@@ -253,8 +253,13 @@ std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_
 qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
 
 
+#################### 24 maggio
+
+## modello gerarchico con pendenza variabile
+stan_dat_hier <- readRDS('lab5/pest_data_longer_stan_dat.RDS')
+
 ## ----comp-NB-hier-slopes, cache=TRUE, results="hide", message=FALSE------
-comp_model_NB_hier_slopes <- stan_model('hier_NB_regression_ncp_slopes_mod.stan')
+comp_model_NB_hier_slopes <- stan_model('lab5/hier_NB_regression_ncp_slopes_mod.stan')
 
 
 ## ----run-NB-hier-slopes--------------------------------------------------
@@ -291,4 +296,121 @@ ppc_dens_overlay(
   y = stan_dat_hier$complaints,
   yrep = y_rep[1:200,]
 )
+
+
+# potrebbe esserci una differenza tra un mese e l'altro
+
+
+## ----ppc-group_max-hier-slopes-mean-by-mo--------------------------------
+select_vec <- which(stan_dat_hier$mo_idx %in% 1:12)
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints[select_vec],
+  yrep = y_rep[,select_vec],
+  group = stan_dat_hier$mo_idx[select_vec],
+  stat = 'mean'
+) + xlim(0, 11)
+
+
+## ----comp-NB-hier-mos, cache=TRUE, results="hide", message=FALSE---------
+comp_model_NB_hier_mos <- stan_model('lab5/hier_NB_regression_ncp_slopes_mod_mos.stan')
+
+
+## ----run-NB-hier-slopes-mos----------------------------------------------
+fitted_model_NB_hier_mos <- sampling(comp_model_NB_hier_mos, data = stan_dat_hier, chains = 4, cores = 4, control = list(adapt_delta = 0.9))
+
+
+## ----ppc-full-hier-mos---------------------------------------------------
+y_rep <- as.matrix(fitted_model_NB_hier_mos, pars = "y_rep")
+ppc_dens_overlay(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep[1:200,]
+)
+
+
+## ------------------------------------------------------------------------
+select_vec <- which(stan_dat_hier$mo_idx %in% 1:12)
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints[select_vec],
+  yrep = y_rep[,select_vec],
+  group = stan_dat_hier$mo_idx[select_vec],
+  stat = 'mean'
+)
+
+
+## ------------------------------------------------------------------------
+# 1) compare draws from prior and draws from posterior
+rho_draws <- cbind(
+  2 * rbeta(4000, 10, 5) - 1, # draw from prior
+  as.matrix(fitted_model_NB_hier_mos, pars = "rho")
+)
+colnames(rho_draws) <- c("prior", "posterior")
+mcmc_hist(rho_draws, freq = FALSE, binwidth = 0.025,
+          facet_args = list(nrow = 2)) + xlim(-1, 1)
+
+
+# 2) overlay prior density curve on posterior draws
+gen_rho_prior <- function(x) {
+  alpha <- 10; beta <- 5
+  a <- -1; c <- 1
+  lp <- (alpha - 1) * log(x - a) +
+    (beta - 1) * log(c - x) -
+    (alpha + beta - 1) * log(c - a) -
+    lbeta(alpha, beta)
+  return(exp(lp))
+}
+mcmc_hist(as.matrix(fitted_model_NB_hier_mos, pars = "rho"),
+          freq = FALSE, binwidth = 0.01) +
+  overlay_function(fun = gen_rho_prior) +
+  xlim(-1,1)
+
+## ------------------------------------------------------------------------
+print(fitted_model_NB_hier_mos, pars = c('rho','sigma_mu','sigma_kappa','gamma'))
+
+
+## ------------------------------------------------------------------------
+ppc_intervals(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  x = stan_dat_hier$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+
+## LOOCV
+
+## ------------------------------------------------------------------------
+comp_model_NB_hier_slopes_llik <- stan_model('lab5/hier_NB_regression_ncp_slopes_mod_mos_loglik.stan')
+
+fitted_model_NB_hier_slopes_llik <-
+  sampling(
+    comp_model_NB_hier_slopes_llik,
+    data = stan_dat_hier,
+    chains = 4, cores = 4,
+    control = list(adapt_delta = 0.95)
+  )
+
+
+## ------------------------------------------------------------------------
+comp_model_NB_hier_mos_llik <- stan_model('hier_NB_regression_ncp_slopes_mod_mos_loglik.stan')
+
+fitted_model_NB_hier_mos_llik <-
+  sampling(
+    comp_model_NB_hier_mos_llik,
+    data = stan_dat_hier,
+    chains = 4, cores = 4,
+    control = list(adapt_delta = 0.95)
+  )
+
+
+
+## ----run-NB-hier-slopes-mos-loo------------------------------------------
+library(loo)
+log_lik_slopes <- extract_log_lik(fitted_model_NB_hier_slopes_llik)
+loo_slopes <- loo(log_lik_slopes)
+loo_slopes
+log_lik_mos <- extract_log_lik(fitted_model_NB_hier_mos_llik)
+loo_mos <- loo(log_lik_mos)
+loo_mos
+
+compare(loo_slopes, loo_mos)
+
 
