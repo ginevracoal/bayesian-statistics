@@ -1,0 +1,37 @@
+---
+title: "Problem B: Short-term effect of air pollution on mortality"
+output: html_document
+author: "Ginevra Carbone"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(SemiPar)
+data("milan.mort")
+```
+
+The R package `SemiPar` contains the `milan.mort` dataset on short-term effect of air pollution on mortality. The data comprise 3,652 observations on 9 variables, whose description can be found in the help file. The data are also analysed in the book by Ruppert, Wand and Carroll (2003). The original reference is:
+
+Vigotti, M.A., Rossi, G., Bisanti, L., Zanobetti, A. and Schwartz, J. (1996). Short term effect of urban air pollution on respiratory health in Milan, Italy, 1980-1989. Journal of Epidemiology and Community Health, 50, 71-75.
+
+## Assignment
+
+After performing some explorative analyses:
+
+1. Taking `total.mort` (or a suitable transformation of it) as a normally distributed response variable, build a model for the average number of deaths, checking if some of the covariates may have a nonlinear effect (do not consider the `resp.mort` variable). Follow a Bayesian approach for the task and check the model fit via pp checks.
+
+```{r}
+# data summary
+summary(milan.mort)
+
+milan.mort$tot.mort
+```
+
+2. [optional] Model the nonlinear effects of some covariates.
+
+```{r}
+```
+
+3. Now consider a GLM with a Poisson distributed response for `total.mort`, comparing the fitted response values with those obtained previously.
+
+## Solution
