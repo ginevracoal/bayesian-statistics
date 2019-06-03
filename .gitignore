@@ -1,2 +1,5 @@
 *.Rhistory
 *.RData
+.Rproj.user
+homeworks/homework3/homework3_cache/*
+homeworks/homework3/homework3_files/*

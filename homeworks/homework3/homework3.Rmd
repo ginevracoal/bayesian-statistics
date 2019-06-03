@@ -5,17 +5,246 @@ output:
   html_document: default
   pdf_document: default
 editor_options:
-  chunk_output_type: inline
+  chunk_output_type: console
 ---
 
-```{r setup, include=FALSE}
+```{r setup, echo=FALSE, include=FALSE, message=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+setwd("/home/ginevracoal/MEGA/Università/DSSC/semester_4/bayesian-statistics/homeworks/homework3/")
+
+library(rstan)
+library(R2WinBUGS)
+library(rstanarm)
+library(lubridate)
+library(ggplot2)
+library(bayesplot)
+library(dplyr)
+
+rstan_options(auto_write=TRUE)
 ```
+
 
 ## Exercise 1
 
 **TH-1:** Probit model - Start from the logistic model on slide 20 `1992polls.stan` and write the probit specification of the model using the  `target+=` sintax in the model block and the `bernoulli_lpmf` function (for any doubt, see the Stan manual documentation in the Stan website). Simulate 1000 draws using the `1992polls` data and compare the results with the ones obtained using the `rstanarm::stan_glm` function.
 
+### Probit model
+```{r probit bernoulli, cache=TRUE}
+
+# loading clean data
+source("4.7_Fitting a series of regressions.R",
+       echo=FALSE)
+
+yr <- 1992
+ok <- nes.year==yr & presvote<3
+vote <- presvote[ok] - 1
+income <- data$income[ok]
+
+# fitting glm model
+fit.glm <- rstanarm::stan_glm (vote ~ income, family=binomial(link="probit"))
+
+# fitting stan model
+data_1992 <- list(N = 1179,
+                  vote = vote[is.na(vote)==FALSE],
+                  income = income[is.na(income)==FALSE])
+fit.rstan <- stan('probit_1992polls.stan',
+              data = data_1992, 
+              pars = c("alpha", "beta"),
+              iter = 1000,
+              chains =4)
+
+# printing results
+print(fit.glm)
+print(fit.rstan)
+
+```
+
+Predicted values agree with the fact that the probit model is close to the logit one, with residual SD set to 1.6 instead of 1: $ - 0.88 \approx -1.40 / 1.6 $ and $0.2 \approx 0.33/1.6$.
+
+### Comparison with different priors
+
+```{r compare results}
+# cauchy priors
+fit2.rstan <- stan('cauchy_prior-1992polls.stan',
+              data = data_1992, 
+              pars = c("alpha", "beta"),
+              iter = 1000,
+              chains =4)
+ 
+# normal non informative priors
+fit3.rstan <- stan('non_inf_prior-1992polls.stan',
+              data = data_1992, 
+              pars = c("alpha", "beta"),
+              iter = 1000,
+              chains =4)
+
+# compare results
+print(fit2.rstan)
+print(fit3.rstan)
+```
+
+Using a non-informative normal prior or a weakly informative cauchy prior on the parameters does not influence `Rhat`, `alpha` and `beta` predictions. We can only notice small variations in the effective sample size.
+
 ## Exercise 2
 
 **LAB-1:** Using the most appropriate graphical tools of the `bayesplot` package, analyze the models fitted during the 4th and 5th lab sessions on the cockroaches dataset and comment.
+
+The model we refer to is the non centered model where $\mu_b \sim \mathcal{N}(\alpha+building \,\zeta,\sigma_\mu)$ has been reparametrized with
+
+$\mu_{b, raw} \sim\mathcal{N}(0,1)$
+$\mu_b = \alpha+building \,\zeta+\sigma_\mu\,\mu_{b,raw}$
+
+in order to solve the problem of divergent transitions.
+
+### Prepare data
+```{r prepare data, cache=TRUE, echo=FALSE}
+pest_data <- readRDS('../../labs/lab4/pest_data.RDS')
+
+N_buildings <- length(unique(pest_data$building_id))
+
+## arrange data into a list
+stan_dat_simple <- list(
+  N = nrow(pest_data), 
+  complaints = pest_data$complaints,
+  traps = pest_data$traps,
+  log_sq_foot = log(pest_data$total_sq_foot/1e4),
+  live_in_super = pest_data$live_in_super
+)
+
+comp_model_NB <- stan_model('../../labs/lab4/multiple_NB_regression.stan')
+
+fitted_model_NB <- sampling(comp_model_NB, data = stan_dat_simple)
+samps_NB <- rstan::extract(fitted_model_NB)
+
+y_rep <- samps_NB$y_rep
+
+N_months <- length(unique(pest_data$date))
+
+# Add some IDs for building and month
+pest_data <- pest_data %>%
+  mutate(
+    building_fac = factor(building_id, levels = unique(building_id)),
+    building_idx = as.integer(building_fac),
+    ids = rep(1:N_months, N_buildings),
+    mo_idx = lubridate::month(date)
+  )
+
+# Center and rescale the building specific data
+building_data <- pest_data %>%
+    dplyr::select(
+      building_idx,
+      live_in_super,
+      age_of_building,
+      total_sq_foot,
+      average_tenant_age,
+      monthly_average_rent
+    ) %>%
+    unique() %>%
+    arrange(building_idx) %>%
+    dplyr::select(-building_idx) %>%
+    scale(scale=FALSE) %>%
+    as.data.frame() %>%
+    mutate( # scale by constants
+      age_of_building = age_of_building / 10,
+      total_sq_foot = total_sq_foot / 10000,
+      average_tenant_age = average_tenant_age / 10,
+      monthly_average_rent = monthly_average_rent / 1000
+    ) %>%
+    as.matrix()
+
+stan_dat_hier <-
+  with(pest_data,
+        list(complaints = complaints,
+             traps = traps,
+             N = length(traps),
+             J = N_buildings,
+             log_sq_foot = log(pest_data$total_sq_foot/1e4),
+             building_data = building_data[,-3],
+             mo_idx = as.integer(as.factor(date)),
+             K = 4,
+             building_idx = building_idx
+             )
+       )
+```
+
+### Stan model load and fit
+```{r model load fit, cache=TRUE}
+# load hierarchical data
+#stan_dat_hier <- #readRDS('../../labs/lab5/pest_data_longer_stan_dat.RDS')
+
+# load and fit stan model
+comp_model_NB_hier_ncp <- stan_model('../../labs/lab5/hier_NB_regression_ncp.stan')
+fitted_model_NB_hier_ncp <- sampling(comp_model_NB_hier_ncp, data = stan_dat_hier, chains = 4, cores = 4)
+
+# this is the non-centered model with no divergences
+print(fitted_model_NB_hier_ncp, pars = c('sigma_mu','beta','alpha','phi','mu'))
+
+scatter_no_divs <- mcmc_scatter(
+  as.array(fitted_model_NB_hier_ncp),
+  pars = c("mu[4]", 'sigma_mu'),
+  transform = list('sigma_mu' = "log"),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+scatter_no_divs
+
+parcoord_no_divs <- mcmc_parcoord(
+  as.array(fitted_model_NB_hier_ncp, pars = c("sigma_mu", "mu")),
+  np = nuts_params(fitted_model_NB_hier_ncp)
+)
+parcoord_no_divs
+```
+
+### Posterior predictive check
+```{r ppc density plot, cache=TRUE}
+samps_NB_hier_ncp <- rstan::extract(fitted_model_NB_hier_ncp, pars = c('y_rep','inv_phi'))
+y_rep <- as.matrix(fitted_model_NB_hier_ncp, pars = "y_rep")
+ppc_dens_overlay(stan_dat_hier$complaints, y_rep[1:200,])
+```
+
+Here the light blue lines (there are 200 of them) represents predictive distributions, while the dark blue one is the distribution of the observed data.
+We can notice that the simulated distributions resemble the observed one. 
+
+```{r statistics distributions, cache=TRUE}
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'mean',
+  binwidth = 0.5
+)
+
+ppc_stat_grouped(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  group = pest_data$building_id,
+  stat = 'sd',
+  binwidth = 0.5
+)
+```
+
+The distributions for both statistics show that the predictions are plausible almost over all the different buildings.
+
+
+```{r ppc intervals, cache=TRUE}
+ppc_intervals(
+  y = stan_dat_hier$complaints,
+  yrep = y_rep,
+  x = stan_dat_hier$traps
+) +
+  labs(x = "Number of traps", y = "Number of complaints")
+```
+
+The posterior predictive intervals agree with the observed data.
+Only a single observed number of complaints, the one corresponding to 7 traps, is considered unlikely by the model.
+
+```{r std residuals, cache=TRUE}
+mean_y_rep <- colMeans(y_rep)
+mean_inv_phi <- mean(as.matrix(fitted_model_NB_hier_ncp, pars = "inv_phi"))
+std_resid <- (stan_dat_hier$complaints - mean_y_rep) / sqrt(mean_y_rep + mean_y_rep^2*mean_inv_phi)
+qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+
+```
+
+Positive standard residuals seem to be as many as the negative ones, so the model does not overestimate nor underestimate the real outcomes.
+The residual are not evenly distributed and present a clear pattern, so the model could be improved even more.
