@@ -28,10 +28,10 @@ After performing some explorative analyses:
 ## Part 1
 Taking `total.mort` (or a suitable transformation of it) as a normally distributed response variable, build a model for the average number of deaths, checking if some of the covariates may have a nonlinear effect (do not consider the `resp.mort` variable). Follow a Bayesian approach for the task and check the model fit via pp checks.
 
-```{r}
+```{r exploration}
 # data summary
 summary(milan.mort)
-
+  
 # tot.mort histogram
 ggplot(milan.mort, aes(x = tot.mort)) + 
   geom_bar()
@@ -43,109 +43,217 @@ ggplot(milan.mort, aes(x=tot.mort)) +
 # avg number of deaths
 milan.mort %>% summarize(mean(tot.mort))
 
-# relationship bw number of deaths and S02
-
-# color by holiday
-ggplot(milan.mort, aes(x = SO2, y = tot.mort, color = factor(holiday))) + 
-    geom_jitter()
-
-# color by day of week
-ggplot(milan.mort, aes(x = SO2, y = tot.mort, color = factor(day.of.week))) + 
-    geom_jitter()
-
 # pairplots for numerical variables
 pairs(tot.mort ~ mean.temp + rel.humid + SO2 + TSP, data=milan.mort)
 
 ```
 
-### model 1
+### Weakly informative model
 
-We start with a very simple model
+```{r}
+ggplot(milan.mort, aes(x = TSP, y = tot.mort)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
+
+ggplot(milan.mort, aes(x = SO2, y = tot.mort)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
+
+```
+
+Motivated by the above relationships we start with the predictors $SO2$, measuring sulphur dioxide level in the air, and $TSP$, the total suspended particles:
 
 $$
-\text{tot_mort}_i \sim \mathcal{N}(\mu,\sigma^2)\\
-\mu = \alpha + \beta\; \text{SO2}_i
+\text{tot_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
+\mu_i = \alpha + \beta\; \text{SO2}_i + \gamma \; TSP_i
 $$
-non-informative uniform prior distributions on $\alpha,\beta$ and a Caychy prior on $\sigma \sim Cauchy(0,30)$.
+which has $\mathcal{N}(0,1)$ prior distributions on $\alpha,\beta,\gamma$ and a Cauchy prior on $\sigma \sim Cauchy(0,30)$.
 
-```{r stan simple_informative}
+```{r stan model1}
 ## arrange data into a list
 data <- list(
   N = nrow(milan.mort), 
   tot_mort = milan.mort$tot.mort,
-  SO2 = milan.mort$SO2
-  #TSP = milan.mort$TSP
-  #mean.temp = milan.mort$mean.temp
-  #rel.humid = milan.mort$rel.humid
+  SO2 = milan.mort$SO2,
+  TSP = milan.mort$TSP,
+  mean_temp = milan.mort$mean.temp
 )
 
 ## compile the model
-simple_informative <- stan_model("simple_informative.stan")
+model1 <- stan_model("model1.stan")
 
 ## fit the model
-simple_informative_fit <- sampling(simple_informative, data = data)
+model1_fit <- sampling(model1, data = data)
+print(model1_fit, pars = c('alpha','beta','gamma','sigma'))
 
-# parameters distributions
-mcmc_hist(as.matrix(simple_informative_fit, pars = c('alpha','beta')))
+# relationship bw estimated parameters
+mcmc_scatter(as.matrix(model1_fit, pars = c('alpha','beta')), alpha = 0.2)
 
-## posterior predictive checking
-y_rep <- as.matrix(simple_informative_fit, pars = "y_rep")
+## traceplots
+plot(model1_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
+
+## acf plots
+mcmc_acf(as.matrix(model1_fit, pars=c("alpha","beta","gamma","sigma")))
+
+## parameters distributions
+mcmc_hist(as.matrix(model1_fit, pars = c('alpha','beta','gamma','sigma')))
+
+## posterior predictive check
+y_rep <- as.matrix(model1_fit, pars = "y_rep")
 ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
 
-## standardised residuals of the observed vs predicted number of complaints
+## standardised residuals of the observed vs predicted number of deaths
 mean_y_rep <- colMeans(y_rep)
 std_resid <- (milan.mort$tot.mort - mean_y_rep) / sqrt(mean_y_rep)
-qplot(mean_y_rep, std_resid) + hline_at(2) + hline_at(-2)
+qplot(mean_y_rep, std_resid) + hline_at(0, color="gray50")
 
-# mean estimate comparison
+# real mean vs estimated mean
 ppc_stat(y = y, yrep = y_rep, stat = "mean")
-mean(y)
-mean(y_rep)
+print(c(mean(y),mean(y_rep)))
+
 ```
 
-Residuals look evenly distributed between positive and negative values. This means that the model does not understimate or overestimate the outcome values.
+Rhat value equal to one indicates the convergence of the chains, which is confirmed by the traceplots mixing well. Also, the autocorrelation decreases for all parameters.
 
-The problem with this model is that the mean value estimate is inaccurate.
+In the posterior predictive check, the simulated distributions resemble the original one.
 
+The residuals look mostly positive, this means that the model understimates the real outcomes.
 
-## model 2
+### 
 
-Now we test the same model on $\mathcal{N}(0,1)$ priors for $\alpha$ and $\beta$.
+Now we test the same model on weakly informative priors  for $\alpha$,$\beta$ and $gamma$.
 
-```{r stan model2}
+```{r stan temperature}
+
+#ggplot(milan.mort, aes(x = rel.humid, y = tot.mort)) + 
+#  geom_point() + 
+#  geom_smooth(method = "lm", se = FALSE)
+
+## mean.temp vs tot.mort
+ggplot(milan.mort, aes(x = mean.temp, y = tot.mort)) + 
+  geom_point() + 
+  geom_smooth(method = "lm", se = FALSE)
 
 ## compile the model
-simple_non_informative <- stan_model("simple_non_informative.stan")
+model2 <- stan_model("model2.stan")
 
 ## fit the model
-simple_non_informative_fit <- sampling(simple_non_informative, data = data1)
+model2_fit <- sampling(model2, data = data)
 
 # parameters distributions
-mcmc_hist(as.matrix(simple_non_informative_fit, pars = c('alpha','beta')))
+mcmc_hist(as.matrix(model2_fit, pars = c('alpha','beta','gamma','sigma')))
 
 ## posterior predictive checking
-y_rep <- as.matrix(simple_non_informative_fit, pars = "y_rep")
+y_rep <- as.matrix(model2_fit, pars = "y_rep")
 ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
 
-# mean estimate comparison
+# real mean vs estimated mean
 ppc_stat(y = y, yrep = y_rep, stat = "mean")
-mean(y)
-mean(y_rep)
+print(c(mean(y),mean(y_rep)))
 ```
 
-We can notice that the estimated mean 
+The plot shows a relationship between the total number of deaths and the mean daily temperature.
 
-*!!!!finire di commentare*
+We can notice that the estimated mean across different days of the week is not accurate.
 
-## model 3
+### Hierarchical model
 
-In the third model we take into account the hierarchical structure of the data among different days of the week.
 
-*perché non considero ad esempio una rappresentazione gerarchica rispetto ai giorni di holiday?*
+```{r hierarchical}
 
-```{r model3}
+ppc_stat_grouped(
+  y = milan.mort$tot.mort, 
+  yrep = y_rep, 
+  group = milan.mort$day.of.week, 
+  stat = 'mean',
+  binwidth = 0.2
+)
+
+ppc_intervals(
+  y = milan.mort$tot.mort,
+  yrep = y_rep,
+  x = milan.mort$day.of.week
+) +
+  labs(x = "day of week", y = "Total deaths")
 ```
 
+The predictions are not plausible over the different days of the week, so we could take into account this hierarchical structure of the data and try modelling the variation across them.
+
+$$
+\text{tot_mort}_{i,d} \sim \mathcal{N}(\mu_{i,d},\sigma^2_d)\\
+\mu_{i,d} = \alpha_d + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta_d \; \text{mean_temp}_i
+$$
+```{r stan model3}
+
+# hierarchical idxs
+idxs = rep(1:2,nrow(milan.mort))
+
+weekday_data <- milan.mort %>%
+  select(day.of.week, everything()) %>% 
+  select(-c(rel.humid,resp.mort)) %>%
+  unique() %>%
+  arrange(day.of.week) %>%
+  select(-day.of.week) %>%
+  #scale(scale=FALSE) %>%
+  as.data.frame()
+weekday_data <- as.matrix(as.data.frame(lapply(weekday_data, as.numeric)))
+str(weekday_data)
+
+# hierarchical data
+hier_data <- list(
+  N = nrow(milan.mort), 
+  D = length(unique(milan.mort$day.of.week)),
+  tot_mort = milan.mort$tot.mort,
+  SO2 = milan.mort$SO2,
+  TSP = milan.mort$TSP,
+  mean_temp = milan.mort$mean.temp,
+  day_of_week = milan.mort$day.of.week,
+  weekday_data = weekday_data,
+  holiday = milan.mort$holiday
+)
+str(hier_data)
+
+## compile the model
+model3 <- stan_model("model3.stan")
+
+## fit the model
+# sto fittanto il modello su una normale e questo non mi torna...
+model3_fit <- sampling(model3, data = hier_data)
+print(model3_fit, pars = c('alpha','beta','gamma','sigma'))
+
+# relationship bw estimated parameters
+mcmc_scatter(as.matrix(model3_fit, pars = c('alpha','beta')), alpha = 0.2)
+
+## traceplots
+plot(model3_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
+
+## acf plots
+mcmc_acf(as.matrix(model3_fit, pars=c("alpha","beta","gamma","sigma")))
+
+## parameters distributions
+mcmc_hist(as.matrix(model3_fit, pars = c('alpha','beta','gamma','sigma')))
+
+## posterior predictive check
+y_rep <- as.matrix(model3_fit, pars = "y_rep")
+ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
+
+## standardised residuals of the observed vs predicted number of deaths
+mean_y_rep <- colMeans(y_rep)
+std_resid <- (milan.mort$tot.mort - mean_y_rep) / sqrt(mean_y_rep)
+qplot(mean_y_rep, std_resid) + hline_at(0, color="gray50")
+
+# real mean vs estimated mean
+ppc_stat_grouped(
+  y = milan.mort$tot.mort, 
+  yrep = y_rep, 
+  group = milan.mort$day.of.week, 
+  stat = 'mean',
+  binwidth = 0.2
+)
+
+```
+
+Now the model is able to correctly describe the means 
 
 ## Part 2 [optional]
 
@@ -182,14 +290,30 @@ Now consider a GLM with a Poisson distributed response for `total.mort`, compari
 
 ```{r}
 
+#milan.mort.scaled <- milan.mort %>% 
+#  mutate(TSP = scale(TSP)) %>% 
+#  mutate(SO2 = scale(SO2)) %>% 
+#  mutate(mean.temp = scale(mean.temp))
 
-fit1 <- glm (formula=tot.mort ~ TSP + SO2 + ,
-                 data=milan.mort, 
-                 family=poisson(link="log"))
+#summary(glm (formula=tot.mort ~ TSP + SO2 + mean.temp,
+#                 data=milan.mort, 
+#                 family=poisson()))
 
-fit <- stan_glm (formula=tot.mort ~ TSP + log(SO2),
-                 data=milan.mort, 
-                 family=poisson(link="identity"))
+fit_glm <- stan_glm (formula=tot.mort ~ SO2 + TSP + mean.temp,
+                 data=milan.mort.scaled, 
+                 family=poisson())
 
-print(fit)
+# summary
+summary(fit_glm)
+
+# traceplots
+plot(fit_glm, plotfun = "trace") + ggtitle("glm traceplots") 
+
+# acf plots
+mcmc_acf(as.matrix(fit_glm, pars=c("(Intercept)","SO2","TSP","mean.temp")))
+
+# actual coefficients
+print(fit_glm$coefficients)
 ```
+
+The canonical link function is the logarithm.
