@@ -61,13 +61,13 @@ ggplot(milan.mort, aes(x = SO2, y = tot.mort)) +
 
 ```
 
-Motivated by the above relationships we start with the predictors $SO2$, measuring sulphur dioxide level in the air, and $TSP$, the total suspended particles:
+Motivated by the above relationships I start with the predictors $SO2$, measuring sulphur dioxide level in the air, and $TSP$, the total suspended particles:
 
 $$
 \text{tot_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
 \mu_i = \alpha + \beta\; \text{SO2}_i + \gamma \; TSP_i
 $$
-which has $\mathcal{N}(0,1)$ prior distributions on $\alpha,\beta,\gamma$ and a Cauchy prior on $\sigma \sim Cauchy(0,30)$.
+which has $\mathcal{N}(0,10)$ prior distributions on $\alpha,\beta,\gamma$ and a Cauchy prior on $\sigma \sim Cauchy(0,30)$.
 
 ```{r stan model1}
 ## arrange data into a list
@@ -88,6 +88,8 @@ print(model1_fit, pars = c('alpha','beta','gamma','sigma'))
 
 # relationship bw estimated parameters
 mcmc_scatter(as.matrix(model1_fit, pars = c('alpha','beta')), alpha = 0.2)
+mcmc_scatter(as.matrix(model1_fit, pars = c('beta','gamma')), alpha = 0.2)
+mcmc_scatter(as.matrix(model1_fit, pars = c('alpha','sigma')), alpha = 0.2)
 
 ## traceplots
 plot(model1_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
@@ -119,12 +121,12 @@ In the posterior predictive check, the simulated distributions resemble the orig
 
 The residuals look mostly positive, this means that the model understimates the real outcomes.
 
-### 
+The scatterplot shows a relationship between variables beta and gamma.
+*come risolvo questo problema?*
 
-Now we test the same model on weakly informative priors  for $\alpha$,$\beta$ and $gamma$.
+### Including temperature in the model
 
-```{r stan temperature}
-
+```{r temperature}
 #ggplot(milan.mort, aes(x = rel.humid, y = tot.mort)) + 
 #  geom_point() + 
 #  geom_smooth(method = "lm", se = FALSE)
@@ -133,12 +135,22 @@ Now we test the same model on weakly informative priors  for $\alpha$,$\beta$ an
 ggplot(milan.mort, aes(x = mean.temp, y = tot.mort)) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
+```
 
+The plot shows a relationship between the total number of deaths and the mean daily temperature, so I include the information about temperature in the model
+$$
+\text{tot_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
+\mu_i = \alpha + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta \; \text{mean_temp}_i
+$$
+I'm using the same priors from the first model, and a $\mathcal{N}(0,10)$ on $\delta$.
+
+```{r stan model2}
 ## compile the model
 model2 <- stan_model("model2.stan")
 
 ## fit the model
 model2_fit <- sampling(model2, data = data)
+print(model2_fit, pars = c('alpha','beta','sigma'))
 
 # parameters distributions
 mcmc_hist(as.matrix(model2_fit, pars = c('alpha','beta','gamma','sigma')))
@@ -152,12 +164,9 @@ ppc_stat(y = y, yrep = y_rep, stat = "mean")
 print(c(mean(y),mean(y_rep)))
 ```
 
-The plot shows a relationship between the total number of deaths and the mean daily temperature.
-
-We can notice that the estimated mean across different days of the week is not accurate.
+Even if the chains are converging correctly and the autocorrelation is decreasing, the predictions on the mean value are not plausible over the different days of the week.
 
 ### Hierarchical model
-
 
 ```{r hierarchical}
 
@@ -177,17 +186,17 @@ ppc_intervals(
   labs(x = "day of week", y = "Total deaths")
 ```
 
-The predictions are not plausible over the different days of the week, so we could take into account this hierarchical structure of the data and try modelling the variation across them.
+, so we could take into account this hierarchical structure of the data and try modelling the variation across them.
+
+In this model both the intercept and the standard deviation are estimated for each different day of the week.
 
 $$
 \text{tot_mort}_{i,d} \sim \mathcal{N}(\mu_{i,d},\sigma^2_d)\\
 \mu_{i,d} = \alpha_d + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta_d \; \text{mean_temp}_i
 $$
+
 ```{r stan model3}
-
-# hierarchical idxs
-idxs = rep(1:2,nrow(milan.mort))
-
+# weekday data
 weekday_data <- milan.mort %>%
   select(day.of.week, everything()) %>% 
   select(-c(rel.humid,resp.mort)) %>%
@@ -217,7 +226,6 @@ str(hier_data)
 model3 <- stan_model("model3.stan")
 
 ## fit the model
-# sto fittanto il modello su una normale e questo non mi torna...
 model3_fit <- sampling(model3, data = hier_data)
 print(model3_fit, pars = c('alpha','beta','gamma','sigma'))
 
@@ -226,6 +234,8 @@ mcmc_scatter(as.matrix(model3_fit, pars = c('alpha','beta')), alpha = 0.2)
 
 ## traceplots
 plot(model3_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
+
+mcmc_scatter(as.matrix(model3_fit, pars = c('beta','gamma')), alpha = 0.2)
 
 ## acf plots
 mcmc_acf(as.matrix(model3_fit, pars=c("alpha","beta","gamma","sigma")))
@@ -253,7 +263,10 @@ ppc_stat_grouped(
 
 ```
 
-Now the model is able to correctly describe the means 
+Now the model is able to correctly describe the means
+*finire di commentare.*
+
+*sto fittando il modello su una normale e questo non mi torna*
 
 ## Part 2 [optional]
 
@@ -316,4 +329,5 @@ mcmc_acf(as.matrix(fit_glm, pars=c("(Intercept)","SO2","TSP","mean.temp")))
 print(fit_glm$coefficients)
 ```
 
-The canonical link function is the logarithm.
+The canonical link function for Poisson model is the logarithm.
+*commentare*

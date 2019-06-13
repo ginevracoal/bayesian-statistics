@@ -19,7 +19,7 @@ transformed parameters{}
 
 model {
   // Priors
-  alpha ~ normal(0,30);
+  alpha ~ normal(0,10);
   beta ~ normal(0,10);
   gamma ~ normal(0,10);
   delta ~ normal(0,10);
