@@ -17,9 +17,9 @@ transformed parameters{}
 
 model {
   // Priors
-  alpha ~ normal(0,10);
-  beta ~ normal(0,10);
-  gamma ~ normal(0,10);
+  alpha ~ normal(0,30);
+  beta ~ normal(0,30);
+  gamma ~ normal(0,30);
   sigma ~ cauchy(0,30);
   
   // Likelihood
@@ -36,9 +36,11 @@ generated quantities {
   // predictive checks
   real y_rep[N];
   real mu;
+  vector[N] log_lik;
   
   for (n in 1:N) {
     mu = alpha + beta * SO2[n] + gamma * TSP[n];
     y_rep[n] = normal_rng(mu, sigma);
+    log_lik[n] = normal_lpdf(avg_mort[n]| mu, sigma);
   }
 }
