@@ -1,6 +1,6 @@
 data {
   int<lower=1> N; // number of days
-  int<lower=0> tot_mort[N]; // daily deaths
+  real<lower=0> avg_mort[N]; // avg deaths
   // predictors
   vector[N] SO2; 
   vector[N] TSP;
@@ -17,7 +17,6 @@ transformed parameters{}
 
 model {
   // Priors
-  
   alpha ~ normal(0,10);
   beta ~ normal(0,10);
   gamma ~ normal(0,10);
@@ -25,7 +24,7 @@ model {
   
   // Likelihood
   for (n in 1:N){ 
-    tot_mort[n] ~ normal(alpha + beta * SO2[n] + gamma * TSP[n],
+    avg_mort[n] ~ normal(alpha + beta * SO2[n] + gamma * TSP[n],
     sigma);
   }
   //for(n in 1:N){

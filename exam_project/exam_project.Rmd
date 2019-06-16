@@ -15,6 +15,7 @@ library(tidyr)
 library(rstanarm)
 library(rstan)
 library(bayesplot)
+library(zoo)
 data("milan.mort")
 ```
 
@@ -41,21 +42,25 @@ ggplot(milan.mort, aes(x=tot.mort)) +
   geom_bar(aes(fill=factor(day.of.week)), width = 0.5)
 
 # avg number of deaths
-milan.mort %>% summarize(mean(tot.mort))
+#milan.mort %>% summarize(mean(tot.mort))
+
+milan.mort <- milan.mort %>% 
+  mutate(avg.mort = rollmean(x = tot.mort, 3, align = "right", fill = tot.mort))
+head(milan.mort, 10)
 
 # pairplots for numerical variables
-pairs(tot.mort ~ mean.temp + rel.humid + SO2 + TSP, data=milan.mort)
+pairs(avg.mort ~ mean.temp + rel.humid + SO2 + TSP, data=milan.mort)
 
 ```
 
-### Weakly informative model
+### Informative model
 
-```{r}
-ggplot(milan.mort, aes(x = TSP, y = tot.mort)) + 
+```{r lm}
+ggplot(milan.mort, aes(x = TSP, y = avg.mort)) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
 
-ggplot(milan.mort, aes(x = SO2, y = tot.mort)) + 
+ggplot(milan.mort, aes(x = SO2, y = avg.mort)) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
 
@@ -69,11 +74,11 @@ $$
 $$
 which has $\mathcal{N}(0,10)$ prior distributions on $\alpha,\beta,\gamma$ and a Cauchy prior on $\sigma \sim Cauchy(0,30)$.
 
-```{r stan model1}
+```{r stan model1, cache=TRUE}
 ## arrange data into a list
 data <- list(
   N = nrow(milan.mort), 
-  tot_mort = milan.mort$tot.mort,
+  avg_mort = milan.mort$avg.mort,
   SO2 = milan.mort$SO2,
   TSP = milan.mort$TSP,
   mean_temp = milan.mort$mean.temp
@@ -101,8 +106,9 @@ mcmc_acf(as.matrix(model1_fit, pars=c("alpha","beta","gamma","sigma")))
 mcmc_hist(as.matrix(model1_fit, pars = c('alpha','beta','gamma','sigma')))
 
 ## posterior predictive check
+y = milan.mort$avg.mort
 y_rep <- as.matrix(model1_fit, pars = "y_rep")
-ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
+ppc_dens_overlay(y = y, y_rep[1:200,])
 
 ## standardised residuals of the observed vs predicted number of deaths
 mean_y_rep <- colMeans(y_rep)
@@ -111,8 +117,7 @@ qplot(mean_y_rep, std_resid) + hline_at(0, color="gray50")
 
 # real mean vs estimated mean
 ppc_stat(y = y, yrep = y_rep, stat = "mean")
-print(c(mean(y),mean(y_rep)))
-
+#print(c(mean(y),mean(y_rep)))
 ```
 
 Rhat value equal to one indicates the convergence of the chains, which is confirmed by the traceplots mixing well. Also, the autocorrelation decreases for all parameters.
@@ -122,7 +127,7 @@ In the posterior predictive check, the simulated distributions resemble the orig
 The residuals look mostly positive, this means that the model understimates the real outcomes.
 
 The scatterplot shows a relationship between variables beta and gamma.
-*come risolvo questo problema?*
+*commentare*
 
 ### Including temperature in the model
 
@@ -132,19 +137,19 @@ The scatterplot shows a relationship between variables beta and gamma.
 #  geom_smooth(method = "lm", se = FALSE)
 
 ## mean.temp vs tot.mort
-ggplot(milan.mort, aes(x = mean.temp, y = tot.mort)) + 
+ggplot(milan.mort, aes(x = mean.temp, y = y)) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
 ```
 
 The plot shows a relationship between the total number of deaths and the mean daily temperature, so I include the information about temperature in the model
 $$
-\text{tot_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
+\text{avg_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
 \mu_i = \alpha + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta \; \text{mean_temp}_i
 $$
 I'm using the same priors from the first model, and a $\mathcal{N}(0,10)$ on $\delta$.
 
-```{r stan model2}
+```{r stan model2, cache=TRUE}
 ## compile the model
 model2 <- stan_model("model2.stan")
 
@@ -157,21 +162,23 @@ mcmc_hist(as.matrix(model2_fit, pars = c('alpha','beta','gamma','sigma')))
 
 ## posterior predictive checking
 y_rep <- as.matrix(model2_fit, pars = "y_rep")
-ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
+ppc_dens_overlay(y = y, y_rep[1:200,])
 
 # real mean vs estimated mean
 ppc_stat(y = y, yrep = y_rep, stat = "mean")
-print(c(mean(y),mean(y_rep)))
+print(c(mean(y), mean(y_rep)))
 ```
 
 Even if the chains are converging correctly and the autocorrelation is decreasing, the predictions on the mean value are not plausible over the different days of the week.
 
+*wider tails*
+
 ### Hierarchical model
 
-```{r hierarchical}
+```{r day of week, cache=TRUE}
 
 ppc_stat_grouped(
-  y = milan.mort$tot.mort, 
+  y = y, 
   yrep = y_rep, 
   group = milan.mort$day.of.week, 
   stat = 'mean',
@@ -179,23 +186,22 @@ ppc_stat_grouped(
 )
 
 ppc_intervals(
-  y = milan.mort$tot.mort,
+  y = y,
   yrep = y_rep,
   x = milan.mort$day.of.week
 ) +
-  labs(x = "day of week", y = "Total deaths")
+  labs(x = "day of week", y = "avg deaths")
 ```
 
-, so we could take into account this hierarchical structure of the data and try modelling the variation across them.
-
-In this model both the intercept and the standard deviation are estimated for each different day of the week.
+We could take into account the hierarchical structure of the data in week days and try modelling the variation across them.
+In this model both the intercept and the standard deviation are estimated for each different day of the week:
 
 $$
-\text{tot_mort}_{i,d} \sim \mathcal{N}(\mu_{i,d},\sigma^2_d)\\
-\mu_{i,d} = \alpha_d + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta_d \; \text{mean_temp}_i
+\text{avg_mort}_{id} \sim \mathcal{N}(\mu_{id},\sigma_d)\\
+\mu_{id} = \alpha_d + \beta\; \text{SO2}_i + \gamma \; TSP_i + \delta \; \text{mean_temp}_i
 $$
 
-```{r stan model3}
+```{r stan model3, cache=TRUE}
 # weekday data
 weekday_data <- milan.mort %>%
   select(day.of.week, everything()) %>% 
@@ -203,16 +209,14 @@ weekday_data <- milan.mort %>%
   unique() %>%
   arrange(day.of.week) %>%
   select(-day.of.week) %>%
-  #scale(scale=FALSE) %>%
   as.data.frame()
-weekday_data <- as.matrix(as.data.frame(lapply(weekday_data, as.numeric)))
 str(weekday_data)
 
 # hierarchical data
 hier_data <- list(
   N = nrow(milan.mort), 
   D = length(unique(milan.mort$day.of.week)),
-  tot_mort = milan.mort$tot.mort,
+  avg_mort = milan.mort$avg.mort,
   SO2 = milan.mort$SO2,
   TSP = milan.mort$TSP,
   mean_temp = milan.mort$mean.temp,
@@ -226,16 +230,20 @@ str(hier_data)
 model3 <- stan_model("model3.stan")
 
 ## fit the model
-model3_fit <- sampling(model3, data = hier_data)
-print(model3_fit, pars = c('alpha','beta','gamma','sigma'))
+model3_fit <- sampling(model3, data = hier_data, 
+                       iter = 2000, chains = 4)
+print(model3_fit, pars = c('alpha','beta','gamma','delta','sigma'))
 
-# relationship bw estimated parameters
-mcmc_scatter(as.matrix(model3_fit, pars = c('alpha','beta')), alpha = 0.2)
+model3_fit_old <- model3_fit
+
+# areas plots
+mcmc_areas(as.matrix(model3_fit, pars = c('alpha')))
+mcmc_areas(as.matrix(model3_fit, pars = c('beta','gamma')))
+mcmc_areas(as.matrix(model3_fit, pars = c('delta')))
+mcmc_areas(as.matrix(model3_fit, pars = c('sigma')))
 
 ## traceplots
 plot(model3_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
-
-mcmc_scatter(as.matrix(model3_fit, pars = c('beta','gamma')), alpha = 0.2)
 
 ## acf plots
 mcmc_acf(as.matrix(model3_fit, pars=c("alpha","beta","gamma","sigma")))
@@ -245,28 +253,28 @@ mcmc_hist(as.matrix(model3_fit, pars = c('alpha','beta','gamma','sigma')))
 
 ## posterior predictive check
 y_rep <- as.matrix(model3_fit, pars = "y_rep")
-ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
-
-## standardised residuals of the observed vs predicted number of deaths
-mean_y_rep <- colMeans(y_rep)
-std_resid <- (milan.mort$tot.mort - mean_y_rep) / sqrt(mean_y_rep)
-qplot(mean_y_rep, std_resid) + hline_at(0, color="gray50")
+ppc_dens_overlay(y = y, y_rep[1:200,])
 
 # real mean vs estimated mean
 ppc_stat_grouped(
-  y = milan.mort$tot.mort, 
+  y = y, 
   yrep = y_rep, 
   group = milan.mort$day.of.week, 
   stat = 'mean',
   binwidth = 0.2
 )
 
+ppc_intervals(
+  y = y,
+  yrep = y_rep,
+  x = milan.mort$day.of.week
+) +
+  labs(x = "days of the week", y = "number of deaths in a day")
 ```
 
 Now the model is able to correctly describe the means
 *finire di commentare.*
 
-*sto fittando il modello su una normale e questo non mi torna*
 
 ## Part 2 [optional]
 
@@ -274,34 +282,17 @@ Model the nonlinear effects of some covariates.
 
 ```{r}
 
-ggplot(data = milan.mort, aes(log(SO2),tot.mort,
-                              colour=day.of.week))+geom_point()
+#ggplot(data = milan.mort, aes(SO2,tot.mort))+geom_point()
 
-ggplot(data = milan.mort, aes(TSP,tot.mort,
-                              colour=day.of.week))+geom_point()
-
-ggplot(data = milan.mort, aes(mean.temp,tot.mort,
-                              colour=day.of.week))+geom_point()
-
-ggplot(data = milan.mort, aes(rel.humid,tot.mort,
-                              colour=day.of.week))+geom_point()
-
-covariates <- milan.mort %>% 
-  select(-c("tot.mort","resp.mort")) %>% 
-  colnames()
-
-for(i in range(length(covariates))){
-  print(ggplot(data = milan.mort, 
-        aes_string(x=covariates[i],y="tot.mort")) + geom_point())
-}
-
+# pairplots for numerical variables
+pairs(avg.mort ~ mean.temp + rel.humid + SO2 + TSP, data=milan.mort)
 ```
 
 ## Part 3
 
 Now consider a GLM with a Poisson distributed response for `total.mort`, comparing the fitted response values with those obtained previously.
 
-```{r}
+```{r glm, cache=TRUE}
 
 #milan.mort.scaled <- milan.mort %>% 
 #  mutate(TSP = scale(TSP)) %>% 
@@ -312,22 +303,23 @@ Now consider a GLM with a Poisson distributed response for `total.mort`, compari
 #                 data=milan.mort, 
 #                 family=poisson()))
 
-fit_glm <- stan_glm (formula=tot.mort ~ SO2 + TSP + mean.temp,
-                 data=milan.mort.scaled, 
-                 family=poisson())
-
-# summary
-summary(fit_glm)
+fit_glm_informative <- stan_glm (
+  formula=tot.mort ~ SO2 + TSP + mean.temp,
+  data=milan.mort, 
+  family=poisson(),
+  prior=normal(0,10),
+  prior_intercept = normal(0,10))
+summary(fit_glm_informative)
+print(fit_glm_informative$coefficients)
 
 # traceplots
-plot(fit_glm, plotfun = "trace") + ggtitle("glm traceplots") 
+plot(fit_glm_informative, plotfun = "trace") + ggtitle("glm traceplots") 
 
 # acf plots
-mcmc_acf(as.matrix(fit_glm, pars=c("(Intercept)","SO2","TSP","mean.temp")))
+mcmc_acf(as.matrix(fit_glm_informative, pars=c("(Intercept)","SO2","TSP","mean.temp")))
 
-# actual coefficients
-print(fit_glm$coefficients)
+
 ```
 
 The canonical link function for Poisson model is the logarithm.
-*commentare*
+*confrontare con il modello precedente*
