@@ -5,7 +5,7 @@ data {
   vector[N] SO2; 
   vector[N] TSP;
   vector[N] mean_temp;
-}
+} 
 
 parameters {
   real alpha; 

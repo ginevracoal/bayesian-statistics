@@ -9,7 +9,6 @@ editor_options:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(cache=TRUE)
 #knitr::opts_chunk$set(error = TRUE)
 library(SemiPar)
 library(dplyr)
@@ -27,117 +26,74 @@ The R package `SemiPar` contains the `milan.mort` dataset on short-term effect o
 
 Vigotti, M.A., Rossi, G., Bisanti, L., Zanobetti, A. and Schwartz, J. (1996). Short term effect of urban air pollution on respiratory health in Milan, Italy, 1980-1989. Journal of Epidemiology and Community Health, 50, 71-75.
 
-After performing some explorative analyses:
 
+## Data exploration
 
-## Part 1
-Taking `total.mort` (or a suitable transformation of it) as a normally distributed response variable, build a model for the average number of deaths, checking if some of the covariates may have a nonlinear effect (do not consider the `resp.mort` variable). Follow a Bayesian approach for the task and check the model fit via pp checks.
-
-First, I create a new column called `avg.mort`, which will be the response variable. It is simply the average number of deaths in the last 3 days, computed for each observation (The first two are values just discarded).
+First I start from an explorative analysis of the dataset `milan.mort`, containing data on 3652 consecutive days regarding the number of deaths and pollution levels in Milan, from 1st January 1980 to 30th December 1989.
 
 ```{r exploration}
 # data summary
 summary(milan.mort)
   
-# tot.mort histogram
-#ggplot(milan.mort, aes(x = tot.mort)) + 
-#  geom_bar()
-
 # tot.mort histogram by week day
 ggplot(milan.mort, aes(x=tot.mort)) + 
   geom_bar(aes(fill=factor(day.of.week)), width = 0.5)
 
+# distribution in time
+ggplot(data = milan.mort, aes(day.num, SO2)) + geom_point()
+ggplot(data = milan.mort, aes(day.num, TSP)) + geom_point()
+```
+
+- `day.num` is the id for each day
+- `day.of.week` is the index for the day of the week (from $1$ to $7$)
+- `holiday` is an indicator for holiday days
+- `mean.temp` is the mean temperature in degrees Celsius
+- `rel.humid` the relative humidity
+- `tot.mort` the total number of deaths
+- `resp.mort` is the number of respiratory deaths
+- `SO2` measures sulphur dioxide level in the air
+- `TSP` is the total number of suspended particles
+
+
+The objective is that of building a model for the average number of deaths in Milan by using `total.mort` as a response variable (or a suitable transformation of it) and a Bayesian approach.
+
+Concentrations of `SO2` and `TSP` are highly seasonal, since they tend to rise during winter.
+Here follow some scatterplots showing the relationships between the covariates and the response variable `tot.mort`.
+
+```{r covariates}
+# pairplots
+pairs(tot.mort ~ mean.temp + rel.humid + SO2 + TSP,
+      data=milan.mort)
+
+ggplot(data = milan.mort, aes(log(SO2+50), tot.mort)) +  geom_point() + geom_smooth(method = "lm", se = FALSE)
+
+ggplot(data = milan.mort, aes(log(TSP+30), tot.mort)) +  geom_point() + geom_smooth(method = "lm", se = FALSE)
+```
+
+I propose considering an additional response variable, called `avg.mort`, which is simply the average number of deaths in the last 3 days. This value is computed for each observation (the first two entries in the dataset are just discarded) and allows us to take into account the effect of toxicity levels in the air within 3 days next to the observed value.
+
+```{r avg deaths}
 # avg number of deaths
-#milan.mort %>% summarize(mean(tot.mort))
-
 milan.mort <- milan.mort %>% 
-  mutate(avg.mort = rollmean(x = tot.mort, 3, align = "right", fill = NA))
+  mutate(avg.mort = rollmean(x = tot.mort, 5, align = "right", fill = NA))
 old.milan.mort <- milan.mort
-milan.mort <- milan.mort[3:nrow(milan.mort),]
-head(milan.mort, 10)
+milan.mort <- milan.mort[5:nrow(milan.mort),]
+head(milan.mort)
 
-# pairplots for numerical variables
-pairs(avg.mort ~ mean.temp + rel.humid + SO2 + TSP, data=milan.mort)
-
+# day.num plots
+ggplot(milan.mort, aes(x=day.num, y=mean.temp)) + 
+  geom_point()
+ggplot(milan.mort, aes(x=day.num, y=tot.mort)) + 
+  geom_point()
+ggplot(milan.mort, aes(x=day.num, y=avg.mort)) + 
+  geom_point()
 ```
 
-```{r prova, cache=FALSE, echo=FALSE, eval=FALSE}
-## compile the model
-model0 <- stan_model("model0.stan", auto_write = TRUE)
-
-milan.mort <- old.milan.mort %>%
-  select(day.of.week, everything()) %>% 
-  select(-c(rel.humid,resp.mort)) %>%
-  unique() %>%
-  drop_na() %>% 
-  arrange(day.of.week)
-
-weekday_data <- milan.mort %>%  
-#  mutate(mean.temp = exp(mean.temp)) %>% 
-#  select(day.of.week, everything()) %>% 
-#  select(-c(rel.humid,resp.mort)) %>%
-#  unique() %>%
-#  arrange(day.of.week) %>%
-  select(-day.of.week) %>%
-#  drop_na() %>% 
-  as.data.frame()
-str(weekday_data)
-
-hier_data <- list(
-  N = nrow(milan.mort), 
-  D = length(unique(milan.mort$day.of.week)),
-  tot_mort = milan.mort$tot.mort,
-  SO2 = milan.mort$SO2,
-  TSP = milan.mort$TSP,
-  mean_temp = milan.mort$mean.temp,
-  day_of_week = milan.mort$day.of.week,
-  #weekday_data = weekday_data,
-  holiday = milan.mort$holiday
-)
-
-## fit the model
-model0_fit <- sampling(model0, data = hier_data, cores=4,
-                       iter = 1000, chains = 4)
-print(model0_fit, pars = c('alpha','beta','gamma','sigma'))
-
-
-## posterior predictive check
-y_rep <- as.matrix(model0_fit, pars = "y_rep")
-ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
-
-# real mean vs estimated mean
-ppc_stat_grouped(
-  y = milan.mort$tot.mort, 
-  yrep = y_rep, 
-  group = milan.mort$day.of.week, 
-  stat = 'mean',
-  binwidth = 0.2
-)
-
-# intervals
-ppc_intervals(
-  y = milan.mort$tot.mort,
-  yrep = y_rep,
-  x = milan.mort$day.of.week
-) +
-  labs(x = "days of the week", y = "tot number of deaths in a day")  
-
-```
+## Modelling
 
 ### Complete pooling model
 
-```{r lm}
-ggplot(milan.mort, aes(x = TSP, y = avg.mort)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", se = FALSE)
-
-ggplot(milan.mort, aes(x = SO2, y = avg.mort)) + 
-  geom_point() + 
-  geom_smooth(method = "lm", se = FALSE)
-
-```
-
-Motivated by the above relationships I start with the predictors $SO2$, measuring sulphur dioxide level in the air, and $TSP$, the total number of suspended particles:
+Motivated by the above relationships I start with the predictors $SO2$ and $TSP$:
 
 $$
 \text{avg_mort}_i \sim \mathcal{N}(\mu_i,\sigma^2)\\
@@ -145,39 +101,37 @@ $$
 $$
 which has $\mathcal{N}(0,30)$ prior distributions on $\alpha,\beta,\gamma$ and $Cauchy(0,30)$ on $\sigma$.
 
-```{r stan model1}
+```{r compile model 1}
 ## arrange data into a list
-data <- list(
+data <- list( 
   N = nrow(milan.mort), 
   avg_mort = milan.mort$avg.mort,
-  SO2 = milan.mort$SO2,
-  TSP = milan.mort$TSP,
+  SO2 = milan.mort$SO2+50,
+  TSP = milan.mort$TSP+30,
   mean_temp = milan.mort$mean.temp
 )
 
 ## compile the model
 model1 <- stan_model("model1.stan", auto_write = TRUE)
+```
 
+```{r model1 fit, cache=TRUE}
 ## fit the model
 model1_fit <- sampling(model1, data = data, cores=4)
-print(model1_fit, pars = c('alpha','beta','gamma','sigma'))
+```
 
-# for model comparison
-loo_1 <- loo(extract_log_lik(model1_fit))
-print(loo_1)
+```{r model1 checks}
+print(model1_fit, pars = c('alpha','beta','gamma','sigma'))
 
 ## traceplots
 plot(model1_fit, plotfun = "trace", pars = c('alpha','beta','gamma','sigma')) + ggtitle("traceplots") 
 
 ## acf plots
 mcmc_acf(as.matrix(model1_fit, pars=c("alpha","beta","gamma","sigma")))
-```
 
-```{r log_lik, eval=FALSE}
 # for model comparison
 log_lik_1 <- extract_log_lik(model1_fit)
 loo_1 <- loo(log_lik_1)
-waic_1 <- waic(log_lik_1)
 ```
 
 Rhat value equal to one indicates the convergence of the chains, which is confirmed by the traceplots mixing well. Also, the autocorrelation decreases for all parameters.
@@ -208,21 +162,37 @@ qplot(mean_y_rep, std_resid) + hline_at(0, color="gray50")
 
 # real mean vs estimated mean
 ppc_stat(y = milan.mort$avg.mort, yrep = y_rep, stat = "mean")
-#print(c(mean(y),mean(y_rep)))
 ```
 
 In the posterior predictive check, the simulated distributions resemble the original one.
 
 The residuals look mostly positive, this means that the model understimates the real outcomes.
 
+```{r modelling, cache=FALSE, eval=FALSE, echo=FALSE}
+milan.mort.2 <- milan.mort %>% 
+  mutate(SO2 = log(SO2)) %>% 
+  drop_na()
+
+hier_data_2 <- list(
+  N = nrow(milan.mort.2), 
+  D = length(unique(milan.mort.2$day.of.week)),
+  tot_mort = milan.mort.2$tot.mort,
+  SO2 = milan.mort.2$SO2,
+  TSP = milan.mort.2$TSP,
+  mean_temp = milan.mort.2$mean.temp,
+  day_of_week = milan.mort.2$day.of.week,
+  weekday_data = weekday_data[nrow(milan.mort.2)],
+  holiday = milan.mort.2$holiday
+)
+
+## fit the model
+model3_fit2 <- sampling(model3, data = hier_data_2,
+                       iter = 1000, chains = 4)
+```
+
 ### Including temperature in the model
 
-```{r temperature}
-#ggplot(milan.mort, aes(x = rel.humid, y = tot.mort)) + 
-#  geom_point() + 
-#  geom_smooth(method = "lm", se = FALSE)
-
-## mean.temp vs tot.mort
+```{r temperature} 
 ggplot(milan.mort, aes(x = mean.temp, y = milan.mort$avg.mort)) + 
   geom_point() + 
   geom_smooth(method = "lm", se = FALSE)
@@ -235,44 +205,54 @@ $$
 $$
 I'm using the same priors from the first model, and a $\mathcal{N}(0,30)$ on $\delta$.
 
-```{r stan model2}
+```{r compile model 2}
 ## compile the model
 model2 <- stan_model("model2.stan", auto_write = TRUE)
+```
 
+```{r fit model2, cache=TRUE}
 ## fit the model
 model2_fit <- sampling(model2, data = data, cores = 4)
-print(model2_fit, pars = c('alpha','beta','sigma'))
+```
+
+```{r model2 checks}
+print(model2_fit, pars = c('alpha','beta','gamma','delta','sigma'))
 
 # for model comparison
 log_lik_2 <- extract_log_lik(model2_fit)
 loo_2 <- loo(log_lik_2)
-waic_2 <- waic(log_lik_2)
 
 # parameters distributions
 mcmc_hist(as.matrix(model2_fit, pars = c('alpha','beta','gamma','sigma')))
 
 ## posterior predictive checking
 y_rep <- as.matrix(model2_fit, pars = "y_rep")
-ppc_dens_overlay(y = y, y_rep[1:200,])
+ppc_dens_overlay(y = milan.mort$avg.mort, y_rep[1:200,])
 
 # real mean vs estimated mean
 ppc_stat(y = milan.mort$avg.mort, yrep = y_rep, stat = "mean")
-print(c(mean(milan.mort$avg.mort), mean(y_rep)))
+ppc_stat(y = milan.mort$avg.mort, yrep = y_rep, stat = "sd")
 ```
 
-
 ```{r day of week}
-
 ppc_stat_grouped(
-  y = milan.mort$tot.mort, 
+  y = milan.mort$avg.mort, 
   yrep = y_rep, 
   group = milan.mort$day.of.week, 
   stat = 'mean',
   binwidth = 0.2
 )
+
+ppc_stat_grouped(
+  y = milan.mort$avg.mort, 
+  yrep = y_rep, 
+  group = milan.mort$day.of.week, 
+  stat = 'sd',
+  binwidth = 0.2
+)
 ```
 
-Even if the chains are converging correctly and the autocorrelation is decreasing, the predictions on the mean value are not plausible over the different days of the week.
+Even if the chains are converging correctly and the autocorrelation is decreasing, the predictions on the mean value are not always plausible over the different days of the week.
 
 ```{r intervals, echo=FALSE, eval=FALSE}
 #ppc_intervals(
@@ -316,8 +296,8 @@ hier_data <- list(
   N = nrow(milan.mort), 
   D = length(unique(milan.mort$day.of.week)),
   tot_mort = milan.mort$tot.mort,
-  SO2 = milan.mort$SO2,
-  TSP = milan.mort$TSP,
+  SO2 = milan.mort$SO2+50,
+  TSP = milan.mort$TSP+30,
   mean_temp = milan.mort$mean.temp,
   day_of_week = milan.mort$day.of.week,
   holiday = milan.mort$holiday
@@ -325,7 +305,7 @@ hier_data <- list(
 str(hier_data)
 ```
 
-```{r compile model3, cache=FALSE}
+```{r compile model3}
 ## compile the model
 model3 <- stan_model("model3.stan", "auto_write" = TRUE)
 ```
@@ -336,13 +316,12 @@ model3_fit <- sampling(model3, data = hier_data,
                        iter = 1000, chains = 4, cores=2)
 ```
 
-```{r stan model3}
+```{r model3 checks}
 print(model3_fit, pars = c('alpha','beta','gamma','delta','sigma'))
 
 #computing psis-looic
 log_lik_3 <- extract_log_lik(model3_fit)
 loo_3 <- loo(log_lik_3)
-#waic_3 <- waic(log_lik_3)
 
 # areas plots
 mcmc_areas(as.matrix(model3_fit, pars = c('alpha')))
@@ -359,9 +338,6 @@ mcmc_acf(as.matrix(model3_fit, pars=c("alpha","beta","gamma","sigma")))
 ## parameters distributions
 mcmc_hist(as.matrix(model3_fit, pars = c('alpha','beta','gamma','sigma')))
 
-```
-
-```{r model3 ppcheck}
 ## posterior predictive check
 y_rep <- as.matrix(model3_fit, pars = "y_rep")
 ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
@@ -387,47 +363,55 @@ ppc_intervals(
 
 Now the model is able to correctly describe the average number of deaths among different days of the week.
 
-## Part 2 [optional]
 
-Model the nonlinear effects of some covariates.
+```{r double hierarchy, cache=FALSE, echo=FALSE, eval=FALSE}
+# NON FUNZIONA, sistemare
+model0 <- stan_model("model0.stan", auto_write = TRUE)
 
-```{r covariates}
-
-# pairplots for numerical variables
-pairs(tot.mort ~  SO2 + TSP + mean.temp, data=milan.mort)
-
-ggplot(data = milan.mort, aes(log(SO2), mean.temp)) +  geom_point() + geom_smooth(method = "lm", se = FALSE)
-
-```
-
-```{r modelling, cache=FALSE, eval=FALSE}
-milan.mort.2 <- milan.mort %>% 
-  mutate(SO2 = log(SO2)) %>% 
-  drop_na()
-
-hier_data_2 <- list(
-  N = nrow(milan.mort.2), 
-  D = length(unique(milan.mort.2$day.of.week)),
-  tot_mort = milan.mort.2$tot.mort,
-  SO2 = milan.mort.2$SO2,
-  TSP = milan.mort.2$TSP,
-  mean_temp = milan.mort.2$mean.temp,
-  day_of_week = milan.mort.2$day.of.week,
-  weekday_data = weekday_data[nrow(milan.mort.2)],
-  holiday = milan.mort.2$holiday
+hier_data <- list(
+  N = nrow(milan.mort), 
+  D = length(unique(milan.mort$day.of.week)),
+  H = length(unique(milan.mort$holiday)),
+  tot_mort = milan.mort$tot.mort,
+  SO2 = milan.mort$SO2,
+  TSP = milan.mort$TSP,
+  mean_temp = milan.mort$mean.temp,
+  day_of_week = milan.mort$day.of.week,
+  holiday = milan.mort$holiday
 )
 
 ## fit the model
-model3_fit2 <- sampling(model3, data = hier_data_2,
+model0_fit <- sampling(model0, data = hier_data, cores=4,
                        iter = 1000, chains = 4)
+print(model0_fit, pars = c('alpha','beta','gamma','sigma'))
+
+
+## posterior predictive check
+y_rep <- as.matrix(model0_fit, pars = "y_rep")
+ppc_dens_overlay(y = milan.mort$tot.mort, y_rep[1:200,])
+
+# real mean vs estimated mean
+ppc_stat_grouped(
+  y = milan.mort$tot.mort, 
+  yrep = y_rep, 
+  group = milan.mort$day.of.week, 
+  stat = 'mean',
+  binwidth = 0.2
+)
+
+# intervals
+ppc_intervals(
+  y = milan.mort$tot.mort,
+  yrep = y_rep,
+  x = milan.mort$day.of.week
+) +
+  labs(x = "days of the week", y = "tot number of deaths in a day")  
+
 ```
 
+## Comparison with a GLM model 
 
-The scatterplot shows an evident non linear relationship between `SO2` and `mean.temp`.
-
-## Part 3
-
-Now consider a GLM with a Poisson distributed response for `total.mort`, comparing the fitted response values with those obtained previously.
+Now I consider a GLM with a Poisson distributed response for `total.mort`, comparing the fitted response values with those obtained previously.
 ```{r echo=FALSE, cache=FALSE, eval=FALSE}
 
 #milan.mort.scaled <- milan.mort %>% 
@@ -440,16 +424,19 @@ summary(glm(formula=tot.mort ~ TSP + SO2 + exp(mean.temp),
                  family=poisson()))
 ```
 
-```{r glm} 
+```{r glm fit, cache=TRUE} 
+# The canonical link function for Poisson model is the logarithm.
 fit_glm <- stan_glm (
   formula=tot.mort ~ SO2 + TSP + mean.temp,
   data=milan.mort, 
   family=poisson(),
   prior=normal(0,10),
   prior_intercept = normal(0,10))
+```
+
+```{r glm summary}
 summary(fit_glm)
 print(fit_glm$coefficients)
-# The canonical link function for Poisson model is the logarithm.
 
 # traceplots
 plot(fit_glm, plotfun = "trace") + ggtitle("glm traceplots") 
@@ -470,4 +457,4 @@ print(loo_3) # hiearchical
 print(loo(fit_glm)) # glm
 ```
 
-By comparing the fitted models on the two considered response variables, we can notice that the models with lower loo values are the temperature model on the average number of deaths and the hierarchical model on the total number of deaths.
+By comparing the fitted models on the two considered response variables `avg.mort` and `tot.mort`, we can notice that the models with lower loo values are the temperature model on the average number of deaths and the hierarchical model on the total number of deaths.
