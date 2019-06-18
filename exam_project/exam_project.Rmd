@@ -568,8 +568,8 @@ mcmc_acf(as.matrix(glm_fit, pars=c("(Intercept)","log(SO2 + 50)","log(TSP + 30)"
 # final comparison
 
 # avg.mort response
-print(loo_1) # no pooling model
-print(loo_2) # no pooling with temperature
+print(loo_1) # complete pooling model
+print(loo_2) # complete pooling with temperature
 
 # tot.mort response
 print(loo_3) # hierarchical on weekday
